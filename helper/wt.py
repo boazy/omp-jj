@@ -772,9 +772,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    # invoked through a `wtm` symlink with no subcommand -> behave as `wt main`
-    if not argv and os.path.basename(sys.argv[0]) == "wtm":
-        argv = ["main"]
+    # invoked through a `wtm` binary or symlink -> behave as `wt main`
+    if os.path.basename(sys.argv[0]) == "wtm":
+        if not argv or argv[0].startswith("-"):
+            argv = ["main", *argv]
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):

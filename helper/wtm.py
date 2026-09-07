@@ -15,10 +15,12 @@ import sys
 from pathlib import Path
 
 _here = Path(__file__).resolve().parent
-_wt = _here / "wt.py"
+_wt = _here / "wt"
+if not _wt.is_file():
+    _wt = _here / "wt.py"
 
 if not _wt.is_file():
-    print(f"wtm: companion helper not found at {_wt}", file=sys.stderr)
+    print(f"wtm: companion helper not found at {_here / 'wt'} or {_here / 'wt.py'}", file=sys.stderr)
     raise SystemExit(1)
 
 # Hand over to wt.py with `main` inserted
