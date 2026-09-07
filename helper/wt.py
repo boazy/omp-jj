@@ -425,21 +425,18 @@ def selection_rows(entries: list[Entry]) -> list[str]:
     return rows
 
 
-def pick_with_fzf(entries: list[Entry], run=_run) -> str:
+def pick_with_fzf(entries: list[Entry], run=_run, have=_have) -> str:
     """Interactive pick; returns the selected first field (name)."""
-    if not _have("fzf"):
+    if not have("fzf"):
         raise WtError("fzf is required for interactive selection; pass a NAME argument")
     rows = selection_rows(entries)
     input_text = "\n".join(rows) + "\n"
-    try:
-        proc = run(
-            ["fzf", "--delimiter=\t", "--nth=1", "--accept-nth=1"],
-            cwd=None,
-            input=input_text,
-            capture_output=False,
-        )
-    except TypeError:
-        proc = run(["fzf", "--delimiter=\t", "--nth=1", "--accept-nth=1"], cwd=None)
+    proc = run(
+        ["fzf", "--delimiter=\t", "--nth=1", "--accept-nth=1"],
+        cwd=None,
+        input=input_text,
+        capture_output=False,
+    )
     if proc.returncode != 0:
         # cancellation (Esc / Ctrl-C) or no match: no output, exit 2
         raise WtError("cancelled", code=2)
@@ -449,13 +446,13 @@ def pick_with_fzf(entries: list[Entry], run=_run) -> str:
     return selected
 
 
-def resolve_entry(repo: Repo, name: str | None, include_all: bool, run=_run) -> Entry:
+def resolve_entry(repo: Repo, name: str | None, include_all: bool, run=_run, have=_have) -> Entry:
     inventory = build_inventory(repo, include_all)
     if not inventory:
         scope = "worktrees" if include_all else "managed worktrees (use --all for external ones)"
         fail(f"no {scope}")
     if name is None:
-        name = pick_with_fzf(inventory, run=run)
+        name = pick_with_fzf(inventory, run=run, have=have)
     for e in inventory:
         if e.name == name:
             return e

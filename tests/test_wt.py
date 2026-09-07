@@ -258,16 +258,19 @@ class TestFzfSelection(unittest.TestCase):
             wt.Entry("jj", "ws-beta", "feat-b", "change2", "clean", Path("/tmp/ws-beta"), True),
         ]
         captured_input = None
+        captured_capture_output = None
 
         def fake_fzf(argv, cwd=None, input=None, capture_output=True):
-            nonlocal captured_input
+            nonlocal captured_input, captured_capture_output
             captured_input = input
+            captured_capture_output = capture_output
             return subprocess.CompletedProcess(
                 argv, returncode=0, stdout="ws-beta\tfeat-b\tclean\t/tmp/ws-beta\n", stderr=""
             )
 
-        name = wt.pick_with_fzf(entries, run=fake_fzf)
+        name = wt.pick_with_fzf(entries, run=fake_fzf, have=lambda t: True)
         self.assertEqual(name, "ws-beta")
+        self.assertFalse(captured_capture_output, "fzf must not capture stderr to pipe")
         self.assertIsNotNone(captured_input)
         self.assertIn("ws-alpha\tfeat-a\tclean\t/tmp/ws-alpha", captured_input)
         self.assertIn("ws-beta\tfeat-b\tclean\t/tmp/ws-beta", captured_input)
@@ -281,8 +284,16 @@ class TestFzfSelection(unittest.TestCase):
             return subprocess.CompletedProcess(argv, returncode=130, stdout="", stderr="")
 
         with self.assertRaises(wt.WtError) as ctx:
-            wt.pick_with_fzf(entries, run=fake_fzf_cancel)
+            wt.pick_with_fzf(entries, run=fake_fzf_cancel, have=lambda t: True)
         self.assertEqual(ctx.exception.code, 2)
+
+    def test_pick_with_fzf_refuses_when_fzf_missing(self):
+        entries = [
+            wt.Entry("jj", "ws-alpha", "feat-a", "change1", "clean", Path("/tmp/ws-alpha"), True),
+        ]
+        with self.assertRaises(wt.WtError) as ctx:
+            wt.pick_with_fzf(entries, have=lambda t: False)
+        self.assertIn("fzf is required for interactive selection", str(ctx.exception))
 
     def test_resolve_entry_without_name_calls_fzf_and_resolves(self):
         repo = wt.Repo("jj", Path("/tmp/repo"), "key")
@@ -297,7 +308,7 @@ class TestFzfSelection(unittest.TestCase):
         orig_build = wt.build_inventory
         try:
             wt.build_inventory = lambda r, a: entries
-            resolved = wt.resolve_entry(repo, None, False, run=fake_fzf)
+            resolved = wt.resolve_entry(repo, None, False, run=fake_fzf, have=lambda t: True)
             self.assertEqual(resolved.name, "ws-two")
             self.assertEqual(resolved.path, Path("/tmp/ws-two"))
         finally:
