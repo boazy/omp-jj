@@ -61,7 +61,7 @@ cp ~/projects/small/agent-extensions/omp-jj/helper/README.md ~/dots/bin/wt.readm
 # Set executable permissions:
 chmod +x ~/dots/bin/wt ~/dots/bin/wtm
 ```
-The scripts contain PEP 723 metadata and a `#!/usr/bin/env -S uv run --script` shebang. They execute without manual virtual environment setup when `uv` or Python 3.14+ is installed.
+The scripts contain PEP 723 metadata and a `#!/usr/bin/env -S uv run --script` shebang. Direct execution requires `uv` on `PATH`. Explicit invocation via `python3 <script>` requires Python 3.14 or later.
 
 ## Commands and options
 
@@ -96,8 +96,8 @@ Before creating a workspace at `<dest>`, the helper walks upward from `<dest>` t
 
 ### Removal safeguards
 
-- **JJ repositories:** The helper inspects working copy status via `jj status` and compares tracked files against disk:
-  - If the working copy contains uncommitted edits, conflicts, or untracked/ignored files, the helper requires `--force`.
+- **JJ repositories:** The helper inspects working copy status via `jj status` and compares files on disk against tracked repository files:
+  - If the working copy contains uncommitted edits, conflicts, or untracked or ignored files on disk, the helper requires `--force`.
   - Removal executes `jj workspace forget <name>`.
   - JJ retains commit history in the repository store. Forgetting a workspace does not delete commits.
   - The helper preserves the directory on disk unless both `--delete-dir` and `--force` are passed.
@@ -125,7 +125,7 @@ wt select <name> --json
 wt main --json
 ```
 
-Example output from `wt list --json`:
+Example output from `wt list --json` (paths in actual output are expanded absolute paths; `~` is shown below for brevity):
 
 ```json
 [
