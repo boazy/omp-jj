@@ -71,14 +71,14 @@ The scripts contain PEP 723 metadata and a `#!/usr/bin/env -S uv run --script` s
 | `select` | `sel` | Print the path of a workspace. Opens an interactive `fzf` prompt when `[name]` is omitted. |
 | `cd` | — | Guard command. Rejects direct execution with instructions to use the shell wrapper. |
 | `add` | — | Create a workspace under the managed root. Rejects path traversal (`/`, `..`, absolute paths). |
-| `remove` | `rm` | Remove a workspace. Rejects dirty or untracked state unless `--force` is passed. |
+| `remove` | `rm` | Remove a workspace. Rejects uncommitted edits, conflicts, untracked/ignored files, or dirty state unless `--force` is passed. |
 | `copy` | `cp` | Copy the workspace path to the clipboard using `platform-copy`. Pass `-r` or `--relative` for a path relative to `$PWD`. |
 | `main` | `wtm` | Print the primary checkout path, mirroring the current relative subdirectory when it exists there. |
 
 ### Global flags
 
 - `-a`, `--all`: Include external or unmanaged locations, such as primary checkouts or manually created workspaces.
-- `-f`, `--force`: Bypass dirty state, untracked file safeguards, and nested-destination warnings.
+- `-f`, `--force`: Bypass uncommitted edits, conflicts, untracked or ignored file safeguards, and nested-destination warnings.
 - `-r`, `--from`, `--revision`: (For `add`) Base revision for the new workspace. Defaults to `@` in JJ repositories and `HEAD` in Git repositories.
 - `-r`, `--relative`: (For `copy`) Output a relative path based on `$PWD`.
 - `--delete-dir`: (For `remove`) Delete the directory from disk for JJ workspaces. Requires `--force`.

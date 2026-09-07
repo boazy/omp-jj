@@ -46,11 +46,30 @@ def fail(msg: str, code: int = 1) -> None:
 # subprocess helpers (injectable for tests)
 
 
-def _run(argv: list[str], cwd: str | Path | None = None) -> subprocess.CompletedProcess:
+def _run(
+    argv: list[str],
+    cwd: str | Path | None = None,
+    input: str | None = None,
+    capture_output: bool = True,
+) -> subprocess.CompletedProcess:
+    if capture_output:
+        return subprocess.run(
+            argv,
+            cwd=str(cwd) if cwd else None,
+            input=input,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     return subprocess.run(
-        argv, cwd=str(cwd) if cwd else None, capture_output=True, text=True, check=False
+        argv,
+        cwd=str(cwd) if cwd else None,
+        input=input,
+        stdout=subprocess.PIPE,
+        stderr=None,
+        text=True,
+        check=False,
     )
-
 
 def _have(tool: str) -> bool:
     return shutil.which(tool) is not None
@@ -406,25 +425,37 @@ def selection_rows(entries: list[Entry]) -> list[str]:
     return rows
 
 
-def pick_with_fzf(entries: list[Entry]) -> str:
+def pick_with_fzf(entries: list[Entry], run=_run) -> str:
     """Interactive pick; returns the selected first field (name)."""
     if not _have("fzf"):
         raise WtError("fzf is required for interactive selection; pass a NAME argument")
     rows = selection_rows(entries)
-    proc = _run(["fzf", "--delimiter=\t", "--nth=1", "--accept-nth=1"], cwd=None)
+    input_text = "\n".join(rows) + "\n"
+    try:
+        proc = run(
+            ["fzf", "--delimiter=\t", "--nth=1", "--accept-nth=1"],
+            cwd=None,
+            input=input_text,
+            capture_output=False,
+        )
+    except TypeError:
+        proc = run(["fzf", "--delimiter=\t", "--nth=1", "--accept-nth=1"], cwd=None)
     if proc.returncode != 0:
         # cancellation (Esc / Ctrl-C) or no match: no output, exit 2
         raise WtError("cancelled", code=2)
-    return proc.stdout.strip()
+    selected = proc.stdout.strip().split("\t")[0].strip()
+    if not selected:
+        raise WtError("cancelled", code=2)
+    return selected
 
 
-def resolve_entry(repo: Repo, name: str | None, include_all: bool) -> Entry:
+def resolve_entry(repo: Repo, name: str | None, include_all: bool, run=_run) -> Entry:
     inventory = build_inventory(repo, include_all)
     if not inventory:
         scope = "worktrees" if include_all else "managed worktrees (use --all for external ones)"
         fail(f"no {scope}")
     if name is None:
-        name = pick_with_fzf(inventory)
+        name = pick_with_fzf(inventory, run=run)
     for e in inventory:
         if e.name == name:
             return e
@@ -437,7 +468,6 @@ def resolve_entry(repo: Repo, name: str | None, include_all: bool) -> Entry:
             if target and Path(os.path.realpath(e.path)) == target:
                 return e
     fail(f"No worktree named {name}")
-
 
 # ---------------------------------------------------------------------------
 # output helpers
