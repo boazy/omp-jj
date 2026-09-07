@@ -5,7 +5,7 @@
 # ///
 """wtm — resolve the primary checkout / workspace, mirroring the current subdirectory.
 
-See helper/README.md for the shell contract and wrapper configuration.
+See wt.readme.md (or helper/README.md) for the shell contract and wrapper configuration.
 """
 
 from __future__ import annotations

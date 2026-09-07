@@ -50,18 +50,17 @@ function wtm() {
 
 ## Installation
 
-Install the scripts into `~/dots/bin` (or another directory in your `PATH`):
+Copy the helper scripts and documentation into `~/dots/bin` (or another directory in your `PATH`):
 
 ```bash
-# Verify executable permissions:
-chmod +x ~/projects/small/agent-extensions/omp-jj/helper/wt.py
-chmod +x ~/projects/small/agent-extensions/omp-jj/helper/wtm.py
+# Copy the helpers and documentation:
+cp ~/projects/small/agent-extensions/omp-jj/helper/wt.py ~/dots/bin/wt
+cp ~/projects/small/agent-extensions/omp-jj/helper/wtm.py ~/dots/bin/wtm
+cp ~/projects/small/agent-extensions/omp-jj/helper/README.md ~/dots/bin/wt.readme.md
 
-# Symlink or copy into ~/dots/bin:
-ln -sf ~/projects/small/agent-extensions/omp-jj/helper/wt.py ~/dots/bin/wt
-ln -sf ~/projects/small/agent-extensions/omp-jj/helper/wtm.py ~/dots/bin/wtm
+# Set executable permissions:
+chmod +x ~/dots/bin/wt ~/dots/bin/wtm
 ```
-
 The scripts contain PEP 723 metadata and a `#!/usr/bin/env -S uv run --script` shebang. They execute without manual virtual environment setup when `uv` or Python 3.14+ is installed.
 
 ## Commands and options
@@ -98,7 +97,7 @@ Before creating a workspace at `<dest>`, the helper walks upward from `<dest>` t
 ### Removal safeguards
 
 - **JJ repositories:** The helper inspects working copy status via `jj status` and compares tracked files against disk:
-  - If the working copy contains uncommitted edits, conflicts, or untracked files, the helper requires `--force`.
+  - If the working copy contains uncommitted edits, conflicts, or untracked/ignored files, the helper requires `--force`.
   - Removal executes `jj workspace forget <name>`.
   - JJ retains commit history in the repository store. Forgetting a workspace does not delete commits.
   - The helper preserves the directory on disk unless both `--delete-dir` and `--force` are passed.

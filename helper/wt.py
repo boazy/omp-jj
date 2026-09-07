@@ -709,7 +709,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="wt",
         description="Unified worktree/workspace manager for JJ and Git repositories.",
         epilog="The executable prints paths; the shell wrapper performs cd. "
-        "See helper/README.md for the shell contract.",
+        "See wt.readme.md (or helper/README.md) for the shell contract.",
     )
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
