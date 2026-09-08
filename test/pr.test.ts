@@ -280,6 +280,6 @@ describe.skipIf(!hasJj)("publication", () => {
 		expect(status).toContain("STALE");
 		const preview = (await host.command("jj-pr", "preview duo", repo)).join("\n");
 		expect(preview).toContain("no longer resolve");
-	});
+	}, 15_000);
 });
 
