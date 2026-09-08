@@ -2,7 +2,7 @@
 
 JJ-native OMP extension: repository-scoped context, mutation-boundary snapshots with
 session-linked recovery, toggleable workflows, repository health, guardrails, grouped PR
-publication with stacks, and unified workspace actions through the bundled helper.
+publication with stacks, and JJ workspace actions through a bundled fallback.
 
 ## Install
 
@@ -35,15 +35,16 @@ done
 
 The short prompt context references these skill names; full workflows live there.
 
-### 3. Link the workspace helper (optional, for `wt` / `/jj-workspace`)
+### 3. Workspace fallback
 
-The helper stays in this repo at `helper/wt.py`. Linking it into a PATH
-directory and wiring shell wrappers is a dotfiles change owned separately —
-see `helper/README.md` and `dots-integration/` (dry-run installer, wrapper
-patch, rollback). The extension resolves the bundled copy directly, so
-`/jj-workspace` works with or without the symlinks. Do not hand-edit
-`~/dots/bin/wt`, `wtm`, or shell integration as part of this install; that is
-a separate workstream.
+`/jj-workspace` invokes `helper/jj-workspace.py` directly. The dependency-free
+fallback supports `root`, `list`, `select`, `main`, `add`, and `remove` for JJ
+workspaces. Run the script directly for CLI use; every command also supports
+`--json` for the extension.
+
+The full `wt` CLI is maintained separately and is not required on `PATH`.
+The fallback reads the same `workspace_dir` configuration so both tools place
+workspaces consistently.
 
 ## Toggles
 
@@ -69,7 +70,7 @@ repository or mutate Git: `JJ: inactive (not a JJ repository)`.
 | `/jj-health` | Read-only inspection: availability, identity, conflicts, PR consistency, snapshot gaps, hooks/LFS/submodules, ownership baseline. Never repairs, fetches, or publishes. |
 | `/jj-pr status\|policy\|map\|unmap\|preview\|publish` | Grouped-change PRs: explicit bookmark groups, presets, preview-then-authorized narrow push + `gh` metadata. |
 | `/jj-stack preview\|publish\|restack` | Bottom-up stack publication and merge-method-aware restacking. |
-| `/jj-workspace list\|select\|main\|add\|remove` | Workspace actions through the helper contract (preview + explicit auth for add/remove). |
+| `/jj-workspace root\|list\|select\|main\|add\|remove` | Read the configured root and manage JJ workspaces through the bundled fallback. Add and remove use previews and explicit authorization. |
 
 Every mutating command previews first and refuses drifted or missing
 authorization with zero side effects. Conversation navigation never restores
@@ -101,19 +102,22 @@ beside the JJ store, validate against `jj` and `gh` before publication, and go
 stale honestly when split/squash replaces change IDs. A stack is an explicit
 chain of mapped groups; chain breaks stop publication before the first push.
 
-## Workspace layouts
+## Workspace configuration
 
-- JJ (including colocated): `~/.local/workspaces/<repo-key>/<name>` (`WT_WORKSPACES_HOME` overrides).
-- Git (no `.jj`): `$MAIN_REPO/.local/trees/<name>`.
+The fallback reads `workspace_dir` from these files, in order:
 
-`jj workspace add` owns creation; colocated directories list once as
-JJ-managed. See `helper/README.md` for placement, collision,
-nested-destination, and removal safeguards — the extension never reimplements
-them.
+1. `~/dots/config/wt.toml`
+2. `<primary-workspace>/.local/wt.toml`
+
+The repository-local value overrides the global value. Relative paths resolve
+from the primary workspace. If neither file configures the directory, the
+fallback uses `<primary-workspace>/.local/workspaces`.
+
+`jj workspace add` owns creation. `/jj-workspace root` reports the resolved
+directory before any changes.
 
 ## Configuration defaults
 
 New sessions start fully on (`master/snapshots/explain: true`). The PR preset
-defaults to `atomic` per shared repo (`/jj-pr policy` persists it). Managed
-workspace home follows the helper (`WT_WORKSPACES_HOME` or
-`~/.local/workspaces`).
+defaults to `atomic` per shared repo (`/jj-pr policy` persists it). Workspace
+placement follows the `workspace_dir` configuration described above.

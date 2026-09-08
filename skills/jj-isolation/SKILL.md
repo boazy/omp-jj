@@ -9,9 +9,9 @@ Do risky work in a separate JJ workspace, never by copying directories around.
 
 ## Workflow
 
-1. Create workspaces only through `jj workspace add` with an explicit base
-   revision. The managed root is `~/.local/workspaces/<repo-key>/<name>`,
-   namespaced per shared repository so common names cannot collide.
+1. Create workspaces through `/jj-workspace add` with an explicit base
+   revision. The command reads the same `workspace_dir` configuration as
+   `wt`; `/jj-workspace root` reports the resolved directory.
 2. Keep JJ as the management backend when a directory is JJ-managed, even if
    a Git registration is also present (record it as a capability, not a
    separate workspace).
@@ -26,5 +26,5 @@ Do risky work in a separate JJ workspace, never by copying directories around.
 
 - Never relocate or remove existing workspaces merely because a session opens
   or finishes.
-- The unified `wt` helper and health-check integration arrive in a later
-  phase; until then, apply the placement and safety rules above manually.
+- Use `/jj-workspace` for root, list, select, main, add, and remove operations.
+  The bundled fallback is JJ-only; the full `wt` CLI remains separate.

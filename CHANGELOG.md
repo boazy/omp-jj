@@ -29,7 +29,7 @@ OMP extension package.
   strict no-rewrite stops, bottom-up stack publication, and
   merge-method-aware restacking without silent policy switches.
 - **Workspace tooling** (`src/workspaces.ts`, `/jj-workspace`,
-  `helper/wt.py`): single-contract client over the helper's `--json`
-  interface — placement, naming, collision, nested-destination, and removal
-  rules stay in the helper. Creation/removal are preview-then-authorized;
-  reads never snapshot. Fixed symlink-aware managed-root comparison.
+  `helper/jj-workspace.py`): dependency-free JJ fallback with the same
+  `workspace_dir` precedence as `wt`. It exposes the resolved root plus
+  list/select/main/add/remove operations. Creation and removal require preview
+  and authorization; read operations do not snapshot the working copy.

@@ -1,23 +1,20 @@
 /**
- * Single workspace-management contract client.
+ * Client for the bundled JJ workspace fallback.
  *
- * All placement, naming, collision, nested-destination, removal-safeguard, repo-key, and
- * dual-registration rules live in the bundled helper (`helper/wt.py`, reached here through
- * its `--json` machine interface). This module NEVER reimplements them: no managed-root
- * computation, no name validation beyond passing helper errors through, no backend
- * detection of its own. Discovery failure is an error, never a backend switch — a failed
- * helper call surfaces its stderr verbatim with the failing command attached.
+ * The fallback owns the narrow machine contract needed by the extension: resolve the
+ * wt-compatible `workspace_dir`, list/select workspaces, find the primary workspace, and
+ * create/remove with collision and safety checks. Configuration precedence exactly follows
+ * `wt`: `~/dots/config/wt.toml`, then `<primary>/.local/wt.toml`, with relative paths based
+ * on the primary workspace.
  *
  * Every call is timeout-bounded and never throws (spawn failure surfaces as an error
- * value). Read paths (`list`, `select`, `main`) perform no snapshots: the helper serves
- * them from `--ignore-working-copy` reads, which the integration smoke verifies against
- * the op log.
+ * value). Read paths (`root`, `list`, `select`, `main`) use `--ignore-working-copy`; only
+ * explicitly authorized creation/removal may snapshot or mutate repository state.
  */
 import { statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-/** One inventory row, exactly as the helper reports it (dual-registration rows arrive with
- * backend `jj` plus a git note — surfaced as-is, never reinterpreted). */
+/** One inventory row, exactly as the fallback reports it. */
 export interface WorkspaceRow {
 	backend: string;
 	name: string;
@@ -41,9 +38,9 @@ export type HelperError =
 export type HelperOutcome<T> = { ok: true; value: T } | { ok: false; error: HelperError };
 
 export interface HelperCallOptions {
-	/** Working directory the helper resolves the repository from. */
+	/** Working directory the helper resolves the JJ repository from. */
 	cwd: string;
-	/** Explicit helper path (tests point at a fixture; production resolves the bundle). */
+	/** Explicit fallback path (tests may point at a fixture). */
 	helper?: string;
 	/** Hard deadline per invocation. */
 	timeoutMs?: number;
@@ -51,14 +48,15 @@ export interface HelperCallOptions {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** Bundled helper, resolved relative to the package root (never PATH, never ~/dots). */
+/** Bundled fallback, resolved relative to the package root (never from PATH). */
 export function bundledHelperPath(): string {
-	return join(dirname(new URL(import.meta.url).pathname), "..", "helper", "wt.py");
+	return join(dirname(new URL(import.meta.url).pathname), "..", "helper", "jj-workspace.py");
 }
 
 function isExecutable(path: string): boolean {
 	try {
-		return statSync(path).isFile() && (statSync(path).mode & 0o111) !== 0;
+		const stat = statSync(path);
+		return stat.isFile() && (stat.mode & 0o111) !== 0;
 	} catch {
 		return false;
 	}
@@ -129,7 +127,7 @@ function resolveHelper(explicit?: string): { path?: string; error?: HelperError 
 		return {
 			error: {
 				kind: "missing",
-				detail: `workspace helper is not executable: ${candidate}. Verify permissions (chmod +x helper/wt.py) and a working 'uv run --script' shebang (or python3); see helper/README.md. Nothing was listed, created, or removed.`,
+				detail: `workspace fallback is not executable: ${candidate}. Verify helper/jj-workspace.py and its 'uv run --script' shebang. Nothing was listed, created, or removed.`,
 			},
 		};
 	}
@@ -140,7 +138,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function isRow(value: unknown): value is WorkspaceRow {
+function isRow(value: unknown): value is Record<string, unknown> {
 	if (!isRecord(value)) return false;
 	return (
 		typeof value.backend === "string" &&
@@ -170,7 +168,7 @@ function normalizeRow(value: Record<string, unknown>): WorkspaceRow {
 function failureText(command: string, err: string, out: string): string {
 	const stderr = err.trim();
 	const stdout = out.trim();
-	const lines = [`wt ${command} failed.`];
+	const lines = [`jj-workspace ${command} failed.`];
 	if (stderr) lines.push(stderr.split("\n").slice(0, 8).join("\n"));
 	// Some failures echo context on stdout; never mistake it for a result path.
 	if (stdout) lines.push(`(stdout, not a result: ${stdout.slice(0, 200)})`);
@@ -194,15 +192,15 @@ async function callJson<T>(
 			ok: false,
 			error: {
 				kind: "missing",
-				detail: `workspace helper could not start (${run.spawnFailed}); see helper/README.md. Nothing was listed, created, or removed.`,
+				detail: `workspace fallback could not start (${run.spawnFailed}). Nothing was listed, created, or removed.`,
 			},
 		};
 	}
 	if (run.signal === "SIGKILL" || (run.code !== 0 && run.signal === "SIGKILL")) {
-		return { ok: false, error: { kind: "timeout", detail: `wt ${command} exceeded ${timeoutMs}ms and was killed. Nothing was confirmed; re-run to observe state.` } };
+		return { ok: false, error: { kind: "timeout", detail: `jj-workspace ${command} exceeded ${timeoutMs}ms and was killed. Nothing was confirmed; re-run to observe state.` } };
 	}
 	if (run.code === 2) {
-		return { ok: false, error: { kind: "cancelled", detail: `wt ${command} was cancelled (no output, no changes).` } };
+		return { ok: false, error: { kind: "cancelled", detail: `jj-workspace ${command} was cancelled (no output, no changes).` } };
 	}
 	if (run.code !== 0) {
 		return { ok: false, error: { kind: "failed", detail: failureText(command, run.err, run.out) } };
@@ -213,27 +211,45 @@ async function callJson<T>(
 	} catch {
 		return {
 			ok: false,
-			error: { kind: "malformed", detail: `wt ${command} returned unparseable JSON: ${run.out.trim().slice(0, 200)}` },
+			error: { kind: "malformed", detail: `jj-workspace ${command} returned unparseable JSON: ${run.out.trim().slice(0, 200)}` },
 		};
 	}
 	const value = parse(json);
 	if (value === undefined) {
 		return {
 			ok: false,
-			error: { kind: "malformed", detail: `wt ${command} returned an unexpected JSON shape: ${run.out.trim().slice(0, 200)}` },
+			error: { kind: "malformed", detail: `jj-workspace ${command} returned an unexpected JSON shape: ${run.out.trim().slice(0, 200)}` },
 		};
 	}
 	return { ok: true, value };
 }
 
-/** Registered workspaces/worktrees. Default: managed only; `all` includes external locations. */
+export interface ConfiguredWorkspaceRoot {
+	backend: string;
+	root: string;
+	path: string;
+}
+
+/** Configured managed-workspace directory and the primary workspace it is relative to. */
+export async function workspaceRoot(options: HelperCallOptions): Promise<HelperOutcome<ConfiguredWorkspaceRoot>> {
+	return callJson("root", ["root", "--json"], options, (json) => {
+		if (!isRecord(json) || typeof json.path !== "string" || typeof json.root !== "string") return undefined;
+		return {
+			backend: typeof json.backend === "string" ? json.backend : "",
+			root: json.root,
+			path: json.path,
+		};
+	});
+}
+
+/** Registered JJ workspaces. Default: configured-root entries only; `all` includes external locations. */
 export async function listWorkspaces(
 	options: HelperCallOptions & { all?: boolean },
 ): Promise<HelperOutcome<WorkspaceRow[]>> {
 	const args = options.all ? ["list", "--json", "--all"] : ["list", "--json"];
 	return callJson("list", args, options, (json) => {
 		if (!Array.isArray(json) || !json.every(isRow)) return undefined;
-		return (json as Record<string, unknown>[]).map(normalizeRow);
+		return json.map(normalizeRow);
 	});
 }
 
@@ -258,7 +274,7 @@ export interface MainWorkspace {
 	path: string;
 }
 
-/** Primary checkout/workspace, mirroring the current subdirectory when it exists there. */
+/** Primary workspace, mirroring the current subdirectory when it exists there. */
 export async function mainWorkspace(options: HelperCallOptions): Promise<HelperOutcome<MainWorkspace>> {
 	return callJson("main", ["main", "--json"], options, (json) => {
 		if (!isRecord(json) || typeof json.path !== "string" || typeof json.root !== "string") return undefined;
@@ -278,9 +294,8 @@ export interface CreatedWorkspace {
 }
 
 /**
- * Create a workspace under the helper's managed root. The name, revision, and force flag
- * pass through untouched — placement, collision, and nested-destination rules run inside
- * the helper, and their refusals surface verbatim.
+ * Create a workspace under the configured root. The name, revision, and force flag pass
+ * through untouched; placement, collision, and nested-destination rules run in the fallback.
  */
 export async function addWorkspace(
 	options: HelperCallOptions & { name: string; revision?: string; force?: boolean },
@@ -308,9 +323,8 @@ export interface RemovedWorkspace {
 }
 
 /**
- * Remove a workspace through the helper's safeguards (dirty/untracked refusal without
- * --force, primary protection, no implicit history deletion). Safeguard notes surface
- * verbatim so the caller can present them before asking for --force.
+ * Remove a workspace through the fallback's safeguards: dirty/untracked refusal without
+ * --force, primary protection, and no implicit history deletion.
  */
 export async function removeWorkspace(
 	options: HelperCallOptions & { name: string; force?: boolean; deleteDir?: boolean; all?: boolean },

@@ -42,7 +42,7 @@ import {
 	type SettingKey,
 } from "./state.ts";
 import { resolveTargetRoot, rootsFor } from "./workspace.ts";
-import { addWorkspace, formatError, formatRow, listWorkspaces, mainWorkspace, removeWorkspace, selectWorkspace } from "./workspaces.ts";
+import { addWorkspace, formatError, formatRow, listWorkspaces, mainWorkspace, removeWorkspace, selectWorkspace, workspaceRoot } from "./workspaces.ts";
 
 /**
  * JJ-native OMP extension (foundation).
@@ -492,8 +492,8 @@ export default function ompJJ(pi: unknown): void {
 			return {
 				block: true,
 				reason: [
-					`git worktree targets a JJ-managed workspace (${root}); worktree/workspace lifecycle belongs to the helper.`,
-					"List, create, and remove through /jj-workspace (placement, collision, and removal safeguards apply).",
+					`git worktree targets a JJ-managed workspace (${root}); worktree/workspace lifecycle belongs to /jj-workspace.`,
+					"List, create, and remove there so placement, collision, and removal safeguards apply.",
 				].join("\n"),
 			};
 		}
@@ -571,7 +571,7 @@ export default function ompJJ(pi: unknown): void {
 			if (sub === "add" || sub === "forget" || sub === "remove") {
 				return {
 					block: true,
-					reason: `jj workspace ${sub} bypasses the workspace helper (placement, collision, ignore coverage, and removal safeguards); use /jj-workspace instead.`,
+					reason: `jj workspace ${sub} bypasses /jj-workspace placement, collision, ignore-coverage, and removal safeguards; use /jj-workspace instead.`,
 				};
 			}
 			return undefined;
@@ -1369,9 +1369,9 @@ export default function ompJJ(pi: unknown): void {
 		},
 	});
 	/**
-	 * Workspace actions delegate every rule to the bundled helper: placement, naming,
-	 * collisions, nested-destination guards, removal safeguards, and backend detection.
-	 * Creation and removal are preview-then-authorized; reads never mutate.
+	 * Workspace actions delegate placement, naming, collisions, nested-destination guards,
+	 * and removal safeguards to the bundled JJ fallback. Creation and removal are
+	 * preview-then-authorized; reads never mutate.
 	 */
 	const workspaceHandler = async (
 		wctx: { cwd: string; master: boolean; notify: (message: string, level?: "info" | "error") => void },
@@ -1390,6 +1390,16 @@ export default function ompJJ(pi: unknown): void {
 			return undefined;
 		};
 		const base = { cwd: wctx.cwd };
+		if (sub === "root") {
+			const result = await workspaceRoot(base);
+			wctx.notify(
+				result.ok
+					? `Configured workspace root: ${result.value.path}\nPrimary workspace: ${result.value.root}`
+					: formatError(result.error),
+				result.ok ? "info" : "error",
+			);
+			return;
+		}
 		if (sub === "list") {
 			const result = await listWorkspaces({ ...base, all: has("-a", "--all") });
 			wctx.notify(result.ok ? [`Workspaces (${result.value.length}):`, ...result.value.map((r) => `  ${formatRow(r)}`)].join("\n") : formatError(result.error), result.ok ? "info" : "error");
@@ -1422,10 +1432,15 @@ export default function ompJJ(pi: unknown): void {
 			}
 			const revision = valueOf("--revision", "-r");
 			if (!has("--apply")) {
+				const configured = await workspaceRoot(base);
+				if (!configured.ok) {
+					wctx.notify(formatError(configured.error), "error");
+					return;
+				}
 				wctx.notify(
 					[
-						`Will create workspace '${name}' under the helper's managed root for this repository (backend per helper detection)${revision ? ` at revision ${revision}` : ""}.`,
-						"Placement, collision, and nested-destination rules run inside the helper.",
+						`Will create workspace '${name}' in ${configured.value.path}${revision ? ` at revision ${revision}` : ""}.`,
+						"Placement, collision, and nested-destination safeguards run before creation.",
 						`To execute: /jj-workspace add ${name} --apply${revision ? ` --revision ${revision}` : ""}`,
 					].join("\n"),
 					"info",
@@ -1452,7 +1467,7 @@ export default function ompJJ(pi: unknown): void {
 				const row = lookup.ok ? lookup.value.find((r) => r.name === name) : undefined;
 				wctx.notify(
 					[
-						row ? `Would remove: ${formatRow(row)}` : `No managed row named '${name}' is visible; the helper still decides (try --all).`,
+						row ? `Would remove: ${formatRow(row)}` : `No managed row named '${name}' is visible; the fallback still decides (try --all).`,
 						"Removal safeguards refuse dirty/untracked state without --force, protect the primary, and never delete history.",
 						`To execute: /jj-workspace remove ${name} --apply --confirm ${name}${has("--force") ? " --force" : ""}${has("--delete-dir") ? " --delete-dir" : ""}`,
 					].join("\n"),
@@ -1475,19 +1490,20 @@ export default function ompJJ(pi: unknown): void {
 	};
 	const workspaceUsage = [
 		"Usage:",
+		"  /jj-workspace root — configured workspaces directory and primary workspace",
 		"  /jj-workspace list [-a] — registered workspaces (managed only unless --all)",
 		"  /jj-workspace select <name> [-a] — resolve one workspace to its path",
 		"  /jj-workspace main — primary checkout/workspace path",
 		"  /jj-workspace add <name> [--revision R] — preview creation (re-run with --apply)",
-		"  /jj-workspace add <name> --apply [--revision R] [--force] — create via the helper",
+		"  /jj-workspace add <name> --apply [--revision R] [--force] — create via the fallback",
 		"  /jj-workspace remove <name> [-a] — preview removal safeguards (re-run with --apply --confirm <name>)",
-		"  /jj-workspace remove <name> --apply --confirm <name> [--force] [--delete-dir] — remove via the helper",
+		"  /jj-workspace remove <name> --apply --confirm <name> [--force] [--delete-dir] — remove via the fallback",
 	].join("\n");
 	api.registerCommand("jj-workspace", {
-		description: "Workspace actions through the bundled helper (list/select/main/add/remove with safeguards)",
+		description: "JJ workspace actions through the bundled fallback (root/list/select/main/add/remove)",
 		getArgumentCompletions: (prefix: string) => {
 			const needle = (prefix ?? "").trim().toLowerCase();
-			const matches = ["list", "select", "main", "add", "remove"]
+			const matches = ["root", "list", "select", "main", "add", "remove"]
 				.filter((word) => word.startsWith(needle))
 				.map((word) => ({ value: word, label: word }));
 			return matches.length > 0 ? matches : null;
