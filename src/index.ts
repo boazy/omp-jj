@@ -747,26 +747,55 @@ export default function ompJJ(pi: unknown): void {
 		try {
 			addProvider((current: AutocompleteProvider) => {
 				if ((current as Record<symbol, unknown>)[WRAPPED] === true) return current;
-				const wrapped = Object.create(current);
-				Object.defineProperty(wrapped, WRAPPED, { value: true });
-				wrapped.getSuggestions = async (
+				const base = current;
+				const suggestions = async (
 					lines: string[],
 					cursorLine: number,
 					cursorCol: number,
 					signal?: AbortSignal,
 				) => {
-					const result = await current.getSuggestions(lines, cursorLine, cursorCol, signal);
+					const result = await base.getSuggestions(lines, cursorLine, cursorCol, signal);
 					if (!result) return result;
 					return { ...result, items: decorateCommandRows(result.items, sessionId) };
 				};
-				if (typeof current.trySyncSlashCompletion === "function") {
-					const sync = current.trySyncSlashCompletion.bind(current);
-					wrapped.trySyncSlashCompletion = (textBeforeCursor: string) => {
-						const result = sync(textBeforeCursor);
-						if (!result) return result;
-						return { ...result, items: decorateCommandRows(result.items, sessionId) };
-					};
-				}
+				const sync =
+					typeof base.trySyncSlashCompletion === "function"
+						? base.trySyncSlashCompletion.bind(base)
+						: undefined;
+				const trySyncSlashCompletion = (textBeforeCursor: string) => {
+					const result = sync?.(textBeforeCursor);
+					if (!result) return result;
+					return { ...result, items: decorateCommandRows(result.items, sessionId) };
+				};
+				// A prototype-chained clone (`Object.create`) would run every inherited method with
+				// the clone as `this`; reading a private field on the real provider then throws
+				// "Cannot access invalid private field" (the editor does exactly that while
+				// rendering inline hints). A Proxy keeps the real receiver for everything this
+				// wrapper does not override. `this` at the call site is the Proxy, and private
+				// fields are not forwarded through one, so a function taken from the chain is
+				// bound back to the provider and the binding is reused until the property resolves
+				// to a different function.
+				const bound = new Map<PropertyKey, { source: unknown; value: unknown }>();
+				const wrapped = new Proxy(base, {
+					get(target, property) {
+						if (property === WRAPPED) return true;
+						if (property === "getSuggestions") return suggestions;
+						if (property === "trySyncSlashCompletion") return sync ? trySyncSlashCompletion : undefined;
+						const value = Reflect.get(target, property, target);
+						if (typeof value !== "function") return value;
+						const cached = bound.get(property);
+						if (cached && cached.source === value) return cached.value;
+						const boundValue = value.bind(target);
+						bound.set(property, { source: value, value: boundValue });
+						return boundValue;
+					},
+					// A write through the Proxy would run a prototype setter with the Proxy as
+					// `this` and fail on the private field the same way a read does, so writes
+					// land on the provider itself.
+					set(target, property, value) {
+						return Reflect.set(target, property, value, target);
+					},
+				});
 				return wrapped as AutocompleteProvider;
 			});
 			wrappedSessions.add(sessionId);

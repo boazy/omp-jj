@@ -148,3 +148,57 @@ describe.skipIf(!hasJj)("toggle commands", () => {
 		]);
 	});
 });
+
+/**
+ * The host's autocomplete provider is a class instance that keeps state in private fields, and
+ * the editor calls methods this extension does not override (inline hints, completion
+ * application). Reaching those through a prototype-chained clone runs them with the clone as
+ * `this` and throws "Cannot access invalid private field", which takes down the whole render.
+ */
+class PrivateStateProvider {
+	#hint = "inline hint";
+	#queued = 0;
+
+	async getSuggestions() {
+		return {
+			items: [{ value: "/jj", label: "/jj", description: "static" }],
+			prefix: "/",
+		};
+	}
+
+	getInlineHint(): string {
+		return this.#hint;
+	}
+
+	get hintLength(): number {
+		return this.#hint.length;
+	}
+
+	set queued(count: number) {
+		this.#queued = count;
+	}
+
+	get queued(): number {
+		return this.#queued;
+	}
+}
+
+describe("palette wrapper", () => {
+	test("inherited methods and accessors keep the base receiver", async () => {
+		const host = startExtension();
+		const plain = await makeDir("omp-jj-palette-");
+		await host.emit("session_start", {}, plain);
+
+		// The stub host types providers loosely; this fixture's own shape is what is under test.
+		const provider = host.wrapProvider(new PrivateStateProvider()) as unknown as PrivateStateProvider;
+
+		expect(provider.getInlineHint()).toBe("inline hint");
+		expect(provider.hintLength).toBe("inline hint".length);
+
+		provider.queued = 3;
+		expect(provider.queued).toBe(3);
+
+		const suggestions = await provider.getSuggestions();
+		expect(suggestions.items[0]?.description).toContain("JJ:");
+	});
+});
