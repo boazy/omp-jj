@@ -18,13 +18,23 @@ verbatim; behavior is preserved underneath the new contracts.
 
 ## Cutover (both engines must never run together)
 
-1. Install `omp-jj` alongside the legacy extension and exercise it: toggles,
-   `/jj-recover list` after a few tool calls, `/jj-health`, prompt redraws and
-   autocomplete creating no snapshots (op-log count is the oracle).
-2. Only when capture/recovery behavior is verified, remove (or disable)
-   `~/.omp/agent/extensions/jj-snapshot` registration so exactly one snapshot
-   engine runs. Two engines would double-snapshot every boundary.
-3. No data migration step exists or is needed (next section).
+`omp plugin install` enables `omp-jj` immediately, and the legacy engine has no runtime toggle.
+Disable the legacy engine before the first session with `omp-jj`, and keep it installed but
+disabled as a fallback until the new engine is verified.
+
+1. Disable the legacy engine without deleting it: add `- extension-module:jj-snapshot` under
+   `disabledExtensions` in `~/.omp/agent/config.yml`, or move
+   `~/.omp/agent/extensions/jj-snapshot` out of that directory. The derived id is the entry
+   directory and file: `jj-snapshot/index.ts` becomes `extension-module:jj-snapshot`.
+2. Install `omp-jj` (`omp plugin install git+https://github.com/boazy/omp-jj`) and restart.
+   `omp-jj` is then the only snapshot engine.
+3. Exercise it: toggles, `/jj-recover list` after a few tool calls, `/jj-health`, prompt redraws
+   and autocomplete creating no snapshots (op-log count is the oracle).
+4. If verification fails, run `omp plugin disable omp-jj` and re-enable the legacy registration.
+   Two engines would double-snapshot every boundary.
+5. Once verified, delete the legacy registration and its `disabledExtensions` entry.
+
+No data migration step exists or is needed (next section).
 
 ## Legacy records, honestly handled
 
